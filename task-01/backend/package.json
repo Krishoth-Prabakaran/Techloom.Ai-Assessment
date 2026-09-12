@@ -1,0 +1,7 @@
+{
+  "name": "techloom-task-01-api",
+  "private": true,
+  "type": "module",
+  "scripts": {"dev": "node --watch src/server.js", "start": "node src/server.js", "test": "node --test"},
+  "dependencies": {"cors": "^2.8.5", "dotenv": "^16.4.7", "express": "^5.1.0", "pg": "^8.16.3"}
+}
