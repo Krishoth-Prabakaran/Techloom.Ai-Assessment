@@ -1,4 +1,45 @@
 'use client';
-import {useEffect,useState} from 'react'; import {ArrowRight,Check,Search,ShoppingBag,X} from 'lucide-react'; import './globals.css';
-const API=process.env.NEXT_PUBLIC_API_URL||'http://localhost:4002/api';
-export default function Home(){const [products,setProducts]=useState([]),[query,setQuery]=useState(''),[category,setCategory]=useState('All'),[cart,setCart]=useState([]),[orders,setOrders]=useState([]),[message,setMessage]=useState('');const load=()=>fetch(`${API}/products`).then(r=>r.json()).then(setProducts);useEffect(()=>{load();fetch(`${API}/orders`).then(r=>r.json()).then(setOrders)},[]);const add=p=>setCart(c=>[...c.filter(x=>x.id!==p.id),{...p,quantity:(c.find(x=>x.id===p.id)?.quantity||0)+1}]);const checkout=async(outcome='success')=>{const r=await fetch(`${API}/checkout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:cart.map(x=>({productId:x.id,quantity:x.quantity})),sessionKey:crypto.randomUUID()})});const o=await r.json();if(!r.ok)return setMessage(o.error);const pay=await fetch(`${API}/orders/${o.id}/pay`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({outcome})});const final=await pay.json();setOrders(x=>[final,...x]);setCart([]);setMessage(`Order ${final.status}.`);load()};const cats=['All',...new Set(products.map(p=>p.category))];const shown=products.filter(p=>(category==='All'||p.category===category)&&(!query||p.name.toLowerCase().includes(query.toLowerCase())));return <><nav><div className="brand">COMMON<span>GROUND</span></div><a href="#shop">Shop</a><a href="#orders">Orders</a><button className="bag" onClick={()=>document.getElementById('cart').showModal()}><ShoppingBag size={17}/>{cart.length}</button></nav><main><section className="hero"><div><p className="eyebrow">SMALL BATCH / EVERYDAY OBJECTS</p><h1>Useful things,<br/><em>well considered.</em></h1><p>Tools, textures, and quiet color for the spaces and rituals you return to.</p></div><div className="hero-art"><div className="sun"></div><div className="arch"></div></div></section><section id="shop" className="shop"><div className="toolbar"><div><p className="eyebrow">THE EDIT</p><h2>Current collection</h2></div><label className="search"><Search size={16}/><input placeholder="Search objects" value={query} onChange={e=>setQuery(e.target.value)}/></label></div><div className="filters">{cats.map(c=><button className={category===c?'active':''} onClick={()=>setCategory(c)} key={c}>{c}</button>)}</div><div className="grid">{shown.map(p=><article className="card" key={p.id}><div className="visual" style={{background:p.accent}}><span>{p.category}</span><button onClick={()=>add(p)} aria-label={`Add ${p.name}`}><ShoppingBag size={17}/></button></div><div className="card-copy"><h3>{p.name}</h3><p>{p.description}</p><strong>${p.price}</strong></div></article>)}</div></section><section id="orders" className="orders"><p className="eyebrow">YOUR RECEIPTS</p><h2>Order history</h2>{orders.length?<div className="order-list">{orders.map(o=><div className="order" key={o.id}><div><strong>#{o.id.slice(0,8)}</strong><span>{o.items.map(i=>`${i.name} × ${i.quantity}`).join(', ')}</span></div><span className={`status ${o.status}`}>{o.status}</span><strong>${o.total}</strong></div>)}</div>:<p className="quiet">Your completed orders will appear here.</p>}</section></main><dialog id="cart"><button className="close" onClick={()=>document.getElementById('cart').close()}><X/></button><p className="eyebrow">YOUR BAG</p><h2>Ready when you are.</h2>{cart.length?cart.map(i=><div className="cart-line" key={i.id}><span>{i.name} × {i.quantity}</span><strong>${i.price*i.quantity}</strong></div>):<p className="quiet">Nothing here yet.</p>}{cart.length&&<><div className="cart-total">Total <strong>${cart.reduce((t,i)=>t+i.price*i.quantity,0)}</strong></div><button className="checkout" onClick={()=>checkout()}><Check size={17}/> Pay successfully <ArrowRight size={17}/></button><button className="timeout" onClick={()=>checkout('timeout')}>Simulate payment timeout</button></>}</dialog>{message&&<div className="toast">{message}</div>}</>}
+
+import { useEffect, useState } from 'react';
+import { ArrowRight, Check, Moon, Search, ShoppingBag, Sun, X } from 'lucide-react';
+import './globals.css';
+
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4002/api';
+
+export default function Home() {
+  const [products, setProducts] = useState([]);
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('All');
+  const [cart, setCart] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [message, setMessage] = useState('');
+  const [dark, setDark] = useState(false);
+
+  const load = () => fetch(`${API}/products`).then((response) => response.json()).then(setProducts);
+
+  useEffect(() => {
+    setDark(localStorage.getItem('common-ground-theme') === 'dark');
+    load();
+    fetch(`${API}/orders`).then((response) => response.json()).then(setOrders);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    localStorage.setItem('common-ground-theme', dark ? 'dark' : 'light');
+  }, [dark]);
+
+  const add = (product) => setCart((items) => [...items.filter((item) => item.id !== product.id), { ...product, quantity: (items.find((item) => item.id === product.id)?.quantity || 0) + 1 }]);
+  const checkout = async (outcome = 'success') => {
+    const response = await fetch(`${API}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })), sessionKey: crypto.randomUUID() }) });
+    const order = await response.json();
+    if (!response.ok) return setMessage(order.error);
+    const payment = await fetch(`${API}/orders/${order.id}/pay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ outcome }) });
+    const finalOrder = await payment.json();
+    setOrders((items) => [finalOrder, ...items]); setCart([]); setMessage(`Order ${finalOrder.status}.`); load();
+  };
+  const categories = ['All', ...new Set(products.map((product) => product.category))];
+  const shown = products.filter((product) => (category === 'All' || product.category === category) && (!query || product.name.toLowerCase().includes(query.toLowerCase())));
+  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  return <><nav><div className="brand">COMMON<span>GROUND</span></div><a href="#shop">Shop</a><a href="#orders">Orders</a><button className="theme-switch" onClick={() => setDark(!dark)} title={`Switch to ${dark ? 'light' : 'dark'} theme`}>{dark ? <Sun size={17}/> : <Moon size={17}/>}<span>{dark ? 'Light' : 'Dark'}</span></button><button className="bag" onClick={() => document.getElementById('cart').showModal()}><ShoppingBag size={17}/>{cart.length}</button></nav><main><section className="hero"><div><p className="eyebrow">SMALL BATCH / EVERYDAY OBJECTS</p><h1>Useful things,<br/><em>well considered.</em></h1><p>Tools, textures, and quiet color for the spaces and rituals you return to.</p></div><div className="hero-art"><div className="sun"></div><div className="arch"></div></div></section><section id="shop" className="shop"><div className="toolbar"><div><p className="eyebrow">THE EDIT</p><h2>Current collection</h2></div><label className="search"><Search size={16}/><input placeholder="Search objects" value={query} onChange={(event) => setQuery(event.target.value)}/></label></div><div className="filters">{categories.map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><div className="grid">{shown.map((product) => <article className="card" key={product.id}><div className="visual" style={{ background: product.accent }}><span>{product.category}</span><button onClick={() => add(product)} aria-label={`Add ${product.name}`}><ShoppingBag size={17}/></button></div><div className="card-copy"><h3>{product.name}</h3><p>{product.description}</p><strong>${product.price}</strong></div></article>)}</div></section><section id="orders" className="orders"><p className="eyebrow">YOUR RECEIPTS</p><h2>Order history</h2>{orders.length ? <div className="order-list">{orders.map((order) => <div className="order" key={order.id}><div><strong>#{order.id.slice(0, 8)}</strong><span>{order.items.map((item) => `${item.name} × ${item.quantity}`).join(', ')}</span></div><span className={`status ${order.status}`}>{order.status}</span><strong>${order.total}</strong></div>)}</div> : <p className="quiet">Your completed orders will appear here.</p>}</section></main><dialog id="cart"><button className="close" onClick={() => document.getElementById('cart').close()}><X/></button><p className="eyebrow">YOUR BAG</p><h2>Ready when you are.</h2>{cart.length ? cart.map((item) => <div className="cart-line" key={item.id}><span>{item.name} × {item.quantity}</span><strong>${item.price * item.quantity}</strong></div>) : <p className="quiet">Nothing here yet.</p>}{cart.length && <><div className="cart-total">Total <strong>${total}</strong></div><button className="checkout" onClick={() => checkout()}><Check size={17}/> Pay successfully <ArrowRight size={17}/></button><button className="timeout" onClick={() => checkout('timeout')}>Simulate payment timeout</button></>}{message && <p className="toast">{message}</p>}</dialog></>;
+}
