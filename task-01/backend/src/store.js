@@ -21,7 +21,7 @@ export class InventoryStore {
     await this.pool.query(migration);
   }
 
-  async listProducts() { return this.pool ? (await this.pool.query('SELECT id, name, price::float, stock FROM products ORDER BY name')).rows : [...this.products.values()]; }
+  async listProducts() { return this.pool ? (await this.pool.query('SELECT id, name, price::float, stock, image_url AS "imageUrl" FROM products ORDER BY name')).rows : [...this.products.values()]; }
   async getProduct(id) { return (await this.listProducts()).find((product) => product.id === id); }
 
   async reserve(items, paymentKey) {

@@ -19,7 +19,7 @@ async function initDatabase() {
 
 async function listProducts(query, category) {
 	if (pool) {
-		const result = await pool.query(`SELECT id, name, category, price::float, description, stock, accent FROM store_products WHERE ($1 = '' OR LOWER(name || ' ' || description) LIKE '%' || LOWER($1) || '%') AND ($2 = '' OR category = $2) ORDER BY name`, [query, category]);
+		const result = await pool.query(`SELECT id, name, category, price::float, description, stock, accent, image_url AS "imageUrl" FROM store_products WHERE ($1 = '' OR LOWER(name || ' ' || description) LIKE '%' || LOWER($1) || '%') AND ($2 = '' OR category = $2) ORDER BY name`, [query, category]);
 		return result.rows;
 	}
 	return products.filter((product) => (!query || `${product.name} ${product.description}`.toLowerCase().includes(query)) && (!category || product.category === category));

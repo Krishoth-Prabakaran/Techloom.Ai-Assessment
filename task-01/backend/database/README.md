@@ -14,6 +14,12 @@ File: `migrations/001_initial_schema.sql`, section `002`
 
 Enables RLS on `products` and `orders`. No public policies are added because the client talks to the Express backend, not directly to Supabase.
 
+## Change 003: Add product images
+
+File: `migrations/001_initial_schema.sql`, section `003`
+
+Adds nullable `products.image_url`. Existing rows are preserved, and image URLs can be updated directly in Supabase.
+
 ## Required workflow
 
 For every database change:

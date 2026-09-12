@@ -59,3 +59,9 @@ ALTER TABLE store_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE store_order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE store_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE store_refunds ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- 003: Add product images
+-- Stores an optional image URL managed from the database.
+
+ALTER TABLE store_products ADD COLUMN IF NOT EXISTS image_url TEXT;

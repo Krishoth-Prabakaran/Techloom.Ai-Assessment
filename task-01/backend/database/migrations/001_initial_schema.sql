@@ -32,3 +32,9 @@ ON CONFLICT (id) DO NOTHING;
 
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- 003: Add product images
+-- Stores an optional image URL managed from the database.
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
