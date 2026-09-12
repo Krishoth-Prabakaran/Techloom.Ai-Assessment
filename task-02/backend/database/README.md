@@ -29,8 +29,3 @@ For every database change:
 3. Update the application code in the same change if the schema contract changes.
 4. Test the migration against the shared Supabase project before deployment.
 
-## Migration 002: Enable Row Level Security
-
-File: `migrations/002_enable_rls.sql`
-
-Enables RLS on all storefront tables. No public policies are added because the client talks to the Express backend, not directly to Supabase. The server-side PostgreSQL connection remains responsible for database access.
