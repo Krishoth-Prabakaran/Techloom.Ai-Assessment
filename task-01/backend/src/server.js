@@ -8,6 +8,7 @@ app.use(cors()); app.use(express.json());
 const asyncRoute = (handler) => (req, res) => Promise.resolve(handler(req, res)).catch((error) => res.status(error.message === 'INSUFFICIENT_STOCK' ? 409 : error.message === 'DUPLICATE_PAYMENT' || error.message === 'DUPLICATE_ORDER' ? 409 : error.message === 'NOT_FOUND' ? 404 : 400).json({ error: error.message }));
 app.get('/health', (_, res) => res.json({ ok: true }));
 app.get('/api/products', asyncRoute(async (_, res) => res.json(await store.listProducts())));
+app.get('/api/orders', asyncRoute(async (_, res) => res.json(await store.listOrders())));
 app.post('/api/products', asyncRoute(async (req, res) => res.status(201).json(await store.createProduct(req.body))));
 app.patch('/api/products/:id', asyncRoute(async (req, res) => res.json(await store.updateProduct(req.params.id, req.body))));
 app.delete('/api/products/:id', asyncRoute(async (req, res) => res.json(await store.deleteProduct(req.params.id))));

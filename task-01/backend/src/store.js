@@ -24,6 +24,11 @@ export class InventoryStore {
   async listProducts() { return this.pool ? (await this.pool.query('SELECT id, name, price::float, stock, image_url AS "imageUrl" FROM products ORDER BY name')).rows : [...this.products.values()]; }
   async getProduct(id) { return (await this.listProducts()).find((product) => product.id === id); }
 
+  async listOrders() {
+    if (this.pool) return (await this.pool.query('SELECT id, status, items, total::float, expires_at AS "expiresAt", created_at AS "createdAt" FROM orders ORDER BY created_at DESC')).rows;
+    return [...new Set(this.orders.values())];
+  }
+
   async createProduct(product) {
     if (this.pool) { const result = await this.pool.query('INSERT INTO products (id, name, price, stock, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, price::float, stock, image_url AS "imageUrl"', [product.id, product.name, product.price, product.stock, product.imageUrl || null]); return result.rows[0]; }
     const created = { ...product }; this.products.set(created.id, created); return created;
