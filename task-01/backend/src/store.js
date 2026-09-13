@@ -24,6 +24,21 @@ export class InventoryStore {
   async listProducts() { return this.pool ? (await this.pool.query('SELECT id, name, price::float, stock, image_url AS "imageUrl" FROM products ORDER BY name')).rows : [...this.products.values()]; }
   async getProduct(id) { return (await this.listProducts()).find((product) => product.id === id); }
 
+  async createProduct(product) {
+    if (this.pool) { const result = await this.pool.query('INSERT INTO products (id, name, price, stock, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, price::float, stock, image_url AS "imageUrl"', [product.id, product.name, product.price, product.stock, product.imageUrl || null]); return result.rows[0]; }
+    const created = { ...product }; this.products.set(created.id, created); return created;
+  }
+
+  async updateProduct(id, product) {
+    if (this.pool) { const result = await this.pool.query('UPDATE products SET name = $1, price = $2, stock = $3, image_url = $4 WHERE id = $5 RETURNING id, name, price::float, stock, image_url AS "imageUrl"', [product.name, product.price, product.stock, product.imageUrl || null, id]); if (!result.rowCount) throw new Error('NOT_FOUND'); return result.rows[0]; }
+    if (!this.products.has(id)) throw new Error('NOT_FOUND'); const updated = { id, ...product }; this.products.set(id, updated); return updated;
+  }
+
+  async deleteProduct(id) {
+    if (this.pool) { const result = await this.pool.query('DELETE FROM products WHERE id = $1 RETURNING id', [id]); if (!result.rowCount) throw new Error('NOT_FOUND'); return { id, deleted: true }; }
+    if (!this.products.delete(id)) throw new Error('NOT_FOUND'); return { id, deleted: true };
+  }
+
   async reserve(items, paymentKey) {
     if (this.pool) return this.reservePostgres(items, paymentKey);
     if (this.orders.has(paymentKey)) throw new Error('DUPLICATE_ORDER');
@@ -56,6 +71,7 @@ export class InventoryStore {
   }
 
   async pay(id, outcome) {
+    if (this.pool) return this.payPostgres(id, outcome);
     const order = this.orders.get(id);
     if (!order) throw new Error('NOT_FOUND');
     if (order.status !== 'reserved') throw new Error('DUPLICATE_PAYMENT');
@@ -64,11 +80,46 @@ export class InventoryStore {
     order.status = 'paid'; return order;
   }
 
+  async payPostgres(id, outcome) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('SELECT id, status, items, total::float, expires_at AS "expiresAt" FROM orders WHERE id = $1 FOR UPDATE', [id]);
+      if (!result.rowCount) throw new Error('NOT_FOUND');
+      const order = result.rows[0];
+      if (order.status !== 'reserved') throw new Error('DUPLICATE_PAYMENT');
+      const expired = new Date(order.expiresAt).getTime() < Date.now() || outcome === 'timeout';
+      const status = expired ? 'expired' : outcome === 'failure' ? 'failed' : 'paid';
+      if (status !== 'paid') {
+        for (const item of order.items) await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.id]);
+      }
+      await client.query('UPDATE orders SET status = $1 WHERE id = $2', [status, id]);
+      await client.query('COMMIT');
+      return { ...order, status };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+  }
+
   async cancel(id, status = 'cancelled') {
+    if (this.pool) return this.cancelPostgres(id, status);
     const order = this.orders.get(id);
     if (!order) throw new Error('NOT_FOUND');
     if (!['reserved', 'paid'].includes(order.status)) throw new Error('INVALID_TRANSITION');
     if (order.status === 'reserved' || status !== 'cancelled') order.items.forEach((line) => { const product = this.products.get(line.id); if (product) product.stock += line.quantity; });
     order.status = status; return order;
+  }
+
+  async cancelPostgres(id, status = 'cancelled') {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('SELECT id, status, items, total::float, expires_at AS "expiresAt" FROM orders WHERE id = $1 FOR UPDATE', [id]);
+      if (!result.rowCount) throw new Error('NOT_FOUND');
+      const order = result.rows[0];
+      if (!['reserved', 'paid'].includes(order.status)) throw new Error('INVALID_TRANSITION');
+      if (order.status === 'reserved' || status !== 'cancelled') for (const item of order.items) await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.id]);
+      await client.query('UPDATE orders SET status = $1 WHERE id = $2', [status, id]);
+      await client.query('COMMIT');
+      return { ...order, status };
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
 }
