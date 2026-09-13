@@ -7,9 +7,9 @@ Two independently deployable projects matching the assessment brief.
 
 ## Live links
 
-- Repository: `https://github.com/YOUR_USERNAME/techloom-assessment`
-- Task 01: `TBD`
-- Task 02: `TBD`
+- Repository: `https://github.com/Krishoth-Prabakaran/Techloom.Ai-Assessment`
+- Task 01: **Deployment URL required before submission**
+- Task 02: **Deployment URL required before submission**
 
 ## Local setup
 
@@ -65,6 +65,8 @@ Open `http://localhost:3000`. The API runs on `http://localhost:4002`.
 Set `DATABASE_URL` from the relevant `.env.example` file. Use the exact Supabase **Session pooler / Node.js** connection string on port `5432`; do not guess the database hostname. Without it, the backends cannot load the Supabase rows.
 
 See each project README for feature walkthroughs, API routes, environment variables, and deployment notes.
+
+Before submitting, replace both deployment entries above with the live frontend URLs and verify that each frontend points to its deployed backend through `VITE_API_URL` or `NEXT_PUBLIC_API_URL`. A GitHub repository alone does not satisfy the assessment.
 
 ## Database change workflow
 

@@ -13,12 +13,38 @@ export class InventoryStore {
     this.pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL.includes('supabase.co') ? { rejectUnauthorized: false } : undefined }) : null;
     this.products = new Map(seed.map((product) => [product.id, { ...product }]));
     this.orders = new Map();
+    this.expiryTimer = null;
   }
 
   async init() {
-    if (!this.pool) return;
-    const migration = await readFile(new URL('../database/migrations/001_initial_schema.sql', import.meta.url), 'utf8');
-    await this.pool.query(migration);
+    if (this.pool) {
+      const migration = await readFile(new URL('../database/migrations/001_initial_schema.sql', import.meta.url), 'utf8');
+      await this.pool.query(migration);
+    }
+    this.expiryTimer = setInterval(() => this.expireReservations().catch(() => {}), 1000);
+    this.expiryTimer.unref?.();
+  }
+
+  async expireReservations() {
+    if (!this.pool) {
+      const now = Date.now();
+      for (const [id, order] of this.orders) {
+        if (id !== order.id || order.status !== 'reserved' || order.expiresAt > now) continue;
+        order.items.forEach((line) => { const product = this.products.get(line.id); if (product) product.stock += line.quantity; });
+        order.status = 'expired';
+      }
+      return;
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query('SELECT id, items FROM orders WHERE status = $1 AND expires_at <= NOW() FOR UPDATE', ['reserved']);
+      for (const order of result.rows) {
+        for (const item of order.items) await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.id]);
+        await client.query('UPDATE orders SET status = $1 WHERE id = $2', ['expired', order.id]);
+      }
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
 
   async listProducts() { return this.pool ? (await this.pool.query('SELECT id, name, price::float, stock, image_url AS "imageUrl" FROM products ORDER BY name')).rows : [...this.products.values()]; }
@@ -109,7 +135,7 @@ export class InventoryStore {
     const order = this.orders.get(id);
     if (!order) throw new Error('NOT_FOUND');
     if (!['reserved', 'paid'].includes(order.status)) throw new Error('INVALID_TRANSITION');
-    if (order.status === 'reserved' || status !== 'cancelled') order.items.forEach((line) => { const product = this.products.get(line.id); if (product) product.stock += line.quantity; });
+    if (['reserved', 'paid'].includes(order.status) || status !== 'cancelled') order.items.forEach((line) => { const product = this.products.get(line.id); if (product) product.stock += line.quantity; });
     order.status = status; return order;
   }
 
@@ -121,7 +147,7 @@ export class InventoryStore {
       if (!result.rowCount) throw new Error('NOT_FOUND');
       const order = result.rows[0];
       if (!['reserved', 'paid'].includes(order.status)) throw new Error('INVALID_TRANSITION');
-      if (order.status === 'reserved' || status !== 'cancelled') for (const item of order.items) await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.id]);
+      if (['reserved', 'paid'].includes(order.status) || status !== 'cancelled') for (const item of order.items) await client.query('UPDATE products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.id]);
       await client.query('UPDATE orders SET status = $1 WHERE id = $2', [status, id]);
       await client.query('COMMIT');
       return { ...order, status };

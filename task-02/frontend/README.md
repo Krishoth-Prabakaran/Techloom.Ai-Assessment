@@ -1,6 +1,6 @@
 # Task 02 Storefront
 
-Next.js storefront with search, category filters, cart checkout, mock timeout, and order history. The paired Express API owns stock and payment state.
+Next.js storefront with search, category filters, product details, cart checkout, successful/failed/timeout mock payments, cancellation with simulated refunds, catalog CRUD, and order history. The paired Express API owns stock and payment state.
 
 ## Run
 

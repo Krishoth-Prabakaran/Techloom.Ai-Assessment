@@ -11,6 +11,29 @@ const products = [{ id: 'field-jacket', name: 'Field Jacket', category: 'Outerwe
 const orders = []; const sessions = new Map();
 const find = (id) => products.find((item) => item.id === id); const error = (res, message, status = 400) => res.status(status).json({ error: message });
 
+async function expireReservations() {
+	if (!pool) {
+		const now = Date.now();
+		for (const order of orders) {
+			if (order.status !== 'reserved' || new Date(order.expiresAt).getTime() > now) continue;
+			order.items.forEach((line) => { const product = find(line.id); if (product) product.stock += line.quantity; });
+			order.status = 'expired';
+		}
+		return;
+	}
+	const client = await pool.connect();
+	try {
+		await client.query('BEGIN');
+		const result = await client.query('SELECT id FROM store_orders WHERE status = $1 AND created_at <= NOW() - interval \'5 minutes\' FOR UPDATE', ['reserved']);
+		for (const order of result.rows) {
+			const items = await client.query('SELECT product_id, quantity FROM store_order_items WHERE order_id = $1', [order.id]);
+			for (const item of items.rows) await client.query('UPDATE store_products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.product_id]);
+			await client.query('UPDATE store_orders SET status = $1 WHERE id = $2', ['expired', order.id]);
+		}
+		await client.query('COMMIT');
+	} catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+}
+
 async function initDatabase() {
 	if (!pool) return;
 	const migration = await readFile(new URL('../database/migrations/001_initial_schema.sql', import.meta.url), 'utf8');
@@ -73,7 +96,7 @@ async function cancelDatabaseOrder(id) {
 		if (!result.rowCount) throw new Error('NOT_FOUND');
 		const order = result.rows[0]; if (!['reserved', 'paid'].includes(order.status)) throw new Error('INVALID_TRANSITION');
 		const itemResult = await client.query('SELECT i.product_id AS id, p.name, p.category, p.description, p.accent, i.quantity, i.unit_price::float AS price FROM store_order_items i JOIN store_products p ON p.id = i.product_id WHERE i.order_id = $1', [id]);
-		if (order.status === 'reserved') for (const item of itemResult.rows) await client.query('UPDATE store_products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.id]);
+		if (['reserved', 'paid'].includes(order.status)) for (const item of itemResult.rows) await client.query('UPDATE store_products SET stock = stock + $1 WHERE id = $2', [item.quantity, item.id]);
 		await client.query('UPDATE store_orders SET status = \'cancelled\' WHERE id = $1', [id]);
 		await client.query('INSERT INTO store_refunds (id, order_id) VALUES ($1, $2) ON CONFLICT (order_id) DO NOTHING', [crypto.randomUUID(), id]);
 		await client.query('COMMIT'); return { ...order, status: 'cancelled', refund: 'simulated-refund-issued', items: itemResult.rows };
@@ -89,7 +112,7 @@ app.delete('/api/products/:id', async (req, res) => { try { if (pool) { const re
 app.get('/api/orders', async (_, res) => { if (pool) return res.json((await pool.query('SELECT o.id, o.status, o.total::float, o.session_key AS "sessionKey", o.created_at AS "createdAt", COALESCE(json_agg(json_build_object(\'id\', i.product_id, \'name\', p.name, \'quantity\', i.quantity, \'price\', i.unit_price::float)) FILTER (WHERE i.product_id IS NOT NULL), \'[]\') AS items FROM store_orders o LEFT JOIN store_order_items i ON i.order_id = o.id LEFT JOIN store_products p ON p.id = i.product_id GROUP BY o.id ORDER BY o.created_at DESC')).rows); res.json(orders); });
 app.post('/api/checkout', async (req, res) => { try { if (pool) return res.status(201).json(await checkoutDatabase(req.body.items, req.body.sessionKey)); const { items, sessionKey } = req.body; if (sessions.has(sessionKey)) return error(res, 'DUPLICATE_CHECKOUT', 409); const lines = []; for (const item of items) { const product = find(item.productId); if (!product || product.stock < item.quantity) return error(res, 'INSUFFICIENT_STOCK', 409); lines.push({ ...product, quantity: item.quantity }); } lines.forEach((line) => { find(line.id).stock -= line.quantity; }); const order = { id: crypto.randomUUID(), status: 'reserved', items: lines, total: lines.reduce((total, line) => total + line.price * line.quantity, 0), sessionKey, createdAt: new Date().toISOString() }; orders.unshift(order); sessions.set(sessionKey, order); res.status(201).json(order); } catch (error) { error.message === 'DUPLICATE_CHECKOUT' || error.message === 'INSUFFICIENT_STOCK' ? res.status(409).json({ error: error.message }) : res.status(500).json({ error: error.message }); } });
 app.post('/api/orders/:id/pay', async (req, res) => { try { if (pool) return res.json(await updateDatabasePayment(req.params.id, req.body.outcome)); const order = orders.find((item) => item.id === req.params.id); if (!order) return error(res, 'NOT_FOUND', 404); if (order.status !== 'reserved') return error(res, 'DUPLICATE_PAYMENT', 409); if (req.body.outcome !== 'success') { order.items.forEach((line) => { find(line.id).stock += line.quantity; }); order.status = req.body.outcome === 'timeout' ? 'expired' : 'failed'; } else order.status = 'paid'; res.json(order); } catch (error) { res.status(error.message === 'DUPLICATE_PAYMENT' ? 409 : error.message === 'NOT_FOUND' ? 404 : 500).json({ error: error.message }); } });
-app.post('/api/orders/:id/cancel', async (req, res) => { try { if (pool) return res.json(await cancelDatabaseOrder(req.params.id)); const order = orders.find((item) => item.id === req.params.id); if (!order) return error(res, 'NOT_FOUND', 404); if (!['paid', 'reserved'].includes(order.status)) return error(res, 'INVALID_TRANSITION'); if (order.status === 'reserved') order.items.forEach((line) => { find(line.id).stock += line.quantity; }); order.status = 'cancelled'; order.refund = 'simulated-refund-issued'; res.json(order); } catch (error) { res.status(error.message === 'NOT_FOUND' ? 404 : error.message === 'INVALID_TRANSITION' ? 400 : 500).json({ error: error.message }); } });
+app.post('/api/orders/:id/cancel', async (req, res) => { try { if (pool) return res.json(await cancelDatabaseOrder(req.params.id)); const order = orders.find((item) => item.id === req.params.id); if (!order) return error(res, 'NOT_FOUND', 404); if (!['paid', 'reserved'].includes(order.status)) return error(res, 'INVALID_TRANSITION'); order.items.forEach((line) => { const product = find(line.id); if (product) product.stock += line.quantity; }); order.status = 'cancelled'; order.refund = 'simulated-refund-issued'; res.json(order); } catch (error) { res.status(error.message === 'NOT_FOUND' ? 404 : error.message === 'INVALID_TRANSITION' ? 400 : 500).json({ error: error.message }); } });
 
 const port = process.env.PORT || 4002;
-initDatabase().then(() => app.listen(port, () => console.log(`Task 02 API listening on ${port}`))).catch((error) => { console.error(`Database initialization failed: ${error.message}`); process.exitCode = 1; });
+initDatabase().then(() => { const expiryTimer = setInterval(() => expireReservations().catch(() => {}), 1000); expiryTimer.unref?.(); app.listen(port, () => console.log(`Task 02 API listening on ${port}`)); }).catch((error) => { console.error(`Database initialization failed: ${error.message}`); process.exitCode = 1; });
