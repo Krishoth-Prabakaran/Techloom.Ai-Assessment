@@ -1,0 +1,2 @@
+.product-image{width:100%!important;height:190px!important;display:block;object-fit:cover;border:0!important;border-radius:10px!important;margin:0 0 20px!important;background:var(--soft)}.product-icon{width:100%!important;height:190px!important;border-radius:10px!important;margin:0 0 20px!important;display:grid}.product{min-height:360px!important}.product h3{font-size:18px!important}
+@media(max-width:500px){.product-image,.product-icon{height:220px!important}}
